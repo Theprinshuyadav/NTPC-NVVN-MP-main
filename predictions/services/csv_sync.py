@@ -1,0 +1,92 @@
+"""Sync ORM records to per-state CSV files."""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+import pandas as pd
+
+from predictions.services.registry import StateRegistry
+from states.models import DemandReading, PredictionRecord
+
+DEMAND_COLUMNS = ["timestamp", "demand_mw", "source"]
+PREDICTION_COLUMNS = [
+    "timestamp", "actual_demand", "predicted_demand", "temp_weighted",
+    "month", "holiday", "is_weekend", "hour", "minute",
+    "y_lag_1", "y_lag_24h", "y_lag_7d",
+]
+
+
+def _ensure_dir(path: Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+
+
+def _seed_header(path: Path, columns: list[str]) -> None:
+    """Write header row if file does not exist. Uses exclusive-create to avoid races."""
+    _ensure_dir(path)
+    try:
+        with path.open("x") as f:
+            f.write(",".join(columns) + "\n")
+    except FileExistsError:
+        pass  # another process beat us to it — header already there
+
+
+def _append_row(path: Path, columns: list[str], row: dict) -> None:
+    """Seed header once, then always append without header."""
+    _seed_header(path, columns)
+    pd.DataFrame([row]).to_csv(path, mode="a", header=False, index=False)
+
+
+def sync_demand_reading(reading: DemandReading) -> None:
+    config = StateRegistry.from_model(reading.state)
+    
+    # Sync to per-state CSV
+    _append_row(config.demand_csv_path, DEMAND_COLUMNS, {
+        "timestamp": reading.timestamp,
+        "demand_mw": reading.demand_mw,
+        "source": reading.source,
+    })
+    
+    # Sync to global demand log CSV
+    from django.conf import settings
+    global_demand_path = settings.BASE_DIR / "data" / "demand_log.csv"
+    _append_row(global_demand_path, DEMAND_COLUMNS, {
+        "timestamp": reading.timestamp,
+        "demand_mw": reading.demand_mw,
+        "source": reading.source,
+    })
+
+
+def sync_prediction_record(record: PredictionRecord) -> None:
+    config = StateRegistry.from_model(record.state)
+    _append_row(config.prediction_csv_path, PREDICTION_COLUMNS, {
+        "timestamp": record.timestamp,
+        "actual_demand": record.actual_demand,
+        "predicted_demand": record.predicted_demand,
+        "temp_weighted": record.temp_weighted,
+        "month": record.month,
+        "holiday": record.holiday,
+        "is_weekend": record.is_weekend,
+        "hour": record.hour,
+        "minute": record.minute,
+        "y_lag_1": record.y_lag_1,
+        "y_lag_24h": record.y_lag_24h,
+        "y_lag_7d": record.y_lag_7d,
+    })
+
+
+def export_state_csvs(state_id: int) -> tuple[Path, Path]:
+    from states.models import State
+
+    state = State.objects.get(pk=state_id)
+    config = StateRegistry.from_model(state)
+
+    latest_demand = DemandReading.objects.filter(state=state).order_by("-timestamp").first()
+    latest_prediction = PredictionRecord.objects.filter(state=state).order_by("-timestamp").first()
+
+    if latest_demand:
+        sync_demand_reading(latest_demand)
+    if latest_prediction:
+        sync_prediction_record(latest_prediction)
+
+    return config.demand_csv_path, config.prediction_csv_path

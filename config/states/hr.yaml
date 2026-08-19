@@ -1,0 +1,29 @@
+code: hr
+name: Haryana
+merit_state_code: HRN
+merit_url: https://meritindia.in/StateWiseDetails/BindCurrentStateStatus?StateCode=HRN
+model_path: models/hr/lgbm_final.txt
+fallback_demand_mw: 7000
+timezone: Asia/Kolkata
+cities:
+  gurgaon:
+    lat: 28.4594
+    lon: 77.0266
+    weight: 0.35
+  faridabad:
+    lat: 28.4089
+    lon: 77.3178
+    weight: 0.25
+  panipat:
+    lat: 29.3909
+    lon: 76.9635
+    weight: 0.15
+  ambala:
+    lat: 30.3750
+    lon: 76.7833
+    weight: 0.15
+  karnal:
+    lat: 29.6857
+    lon: 76.9895
+    weight: 0.10
+# perfect 
